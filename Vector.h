@@ -83,7 +83,7 @@ public:
 
     // move constructor
     Vector(Vector&& other) noexcept
-        : _data(other._data), _size(other._size), _capacity(other._capacity)
+        : _capacity(other._capacity), _size(other._size), _data(other._data)
     {
         // leave other in a valid, empty state
         other._data = nullptr;
@@ -130,11 +130,15 @@ public:
 
     void push_back(const T& value)
     {
-        if (_size == _capacity)
-        {
-            reallocate(capacity() * 1.5);
-        }
-        new (&_data[_size]) T(std::move(value));
+        ensure_capacity();
+        new (&_data[_size]) T((value));
+        ++_size;
+    }
+
+    void push_back(T&& value)
+    {
+        ensure_capacity();
+        new (&_data[_size]) T(std::move(value)); // move-construct
         ++_size;
     }
 
@@ -142,7 +146,7 @@ public:
     {
         if (_size > 0)
         {
-            _data[_size].~T();
+            _data[_size - 1].~T();
             --_size;
         }
     }
@@ -159,10 +163,10 @@ public:
 
 private:
     // eventually move to an Allocator
-    void reallocate(size_t new_capacity)
+    void reallocate(const size_t new_capacity)
     {
         // allocate new mem
-        T* new_data = static_cast<T*>(::operator new(new_capacity));
+        T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
 
         // move to new mem
         for (std::size_t i = 0; i < _size; i++)
@@ -171,7 +175,7 @@ private:
         }
 
         // destroy old elements and point to new
-        for (std::size_t i = 0; i < _capacity; i++)
+        for (std::size_t i = 0; i < _size; i++)
         {
             _data[i].~T();
         }
@@ -179,6 +183,15 @@ private:
         ::operator delete(_data);
         _data = new_data;
         _capacity = new_capacity;
+    }
+
+    void ensure_capacity()
+    {
+        if (_size == _capacity)
+        {
+            const std::size_t new_capacity = (_capacity == 0) ? 1 : (_capacity * 2);
+            reallocate(new_capacity);
+        }
     }
 
 private:

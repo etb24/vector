@@ -1,4 +1,3 @@
 *.idea
 
-/tests/vector_test.cpp
 /notes.txt
