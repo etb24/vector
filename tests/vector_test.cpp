@@ -134,6 +134,21 @@ TEST_F(VectorTest, CapacityExpandsAsElementsAreAdded)
     }
 }
 
+TEST_F(VectorTest, ReallocatePrefersMoveConstruction)
+{
+    Vector<AllocCounter> vec;
+    vec.push_back(AllocCounter(1));
+
+    AllocCounter::reset();
+    vec.push_back(AllocCounter(2)); // triggers reallocate and move existing element
+
+    EXPECT_EQ(vec.size(), 2u);
+    EXPECT_EQ(vec[0].value, 1);
+    EXPECT_EQ(vec[1].value, 2);
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 0u);
+    EXPECT_GE(AllocCounter::move_ctor_count, 2u);
+}
+
 // Modifiers
 TEST_F(VectorTest, PushBackWithLValueStoresElementsAndUpdatesSize)
 {
@@ -186,6 +201,20 @@ TEST_F(VectorTest, PopBackOnEmptyVectorIsNoOp)
     EXPECT_EQ(vec.begin(), vec.end());
 }
 
+TEST_F(VectorTest, PopBackDestroysLastElement)
+{
+    Vector<AllocCounter> vec;
+    vec.push_back(AllocCounter(1));
+    vec.push_back(AllocCounter(2));
+
+    AllocCounter::reset();
+    vec.pop_back();
+
+    EXPECT_EQ(vec.size(), 1u);
+    EXPECT_EQ(vec[0].value, 1);
+    EXPECT_EQ(AllocCounter::dtor_count, 1u);
+}
+
 TEST_F(VectorTest, ClearDestroysAllElementsAndPreservesCapacity)
 {
     Vector<AllocCounter> vec;
@@ -203,6 +232,18 @@ TEST_F(VectorTest, ClearDestroysAllElementsAndPreservesCapacity)
     vec.push_back(AllocCounter(42));
     EXPECT_EQ(vec.size(), 1);
     EXPECT_EQ(vec[0].value, 42);
+}
+
+TEST_F(VectorTest, DestructorDestroysAllElementsAtScopeExit)
+{
+    {
+        Vector<AllocCounter> vec;
+        vec.push_back(AllocCounter(5));
+        vec.push_back(AllocCounter(10));
+        AllocCounter::reset();
+    }
+
+    EXPECT_EQ(AllocCounter::dtor_count, 2u);
 }
 
 // Iterators
@@ -241,4 +282,30 @@ TEST_F(VectorTest, IteratorSupportsRandomAccessLikeOperations)
     it--;
     EXPECT_EQ(*it, 100);
     EXPECT_EQ(it[2], 300);
+}
+
+TEST_F(VectorTest, IteratorEqualityChecks)
+{
+    Vector<int> a;
+    a.push_back(7);
+    a.push_back(14);
+
+    auto begin = a.begin();
+    auto end = a.end();
+    EXPECT_NE(begin, end);
+    ++begin;
+    ++begin;
+    EXPECT_EQ(begin, end);
+
+    const Vector<int>& ca = a;
+    auto cbegin = ca.cbegin();
+    auto cend = ca.cend();
+    EXPECT_NE(cbegin, cend);
+    ++cbegin;
+    ++cbegin;
+    EXPECT_EQ(cbegin, cend);
+
+    Vector<int> b;
+    b.push_back(7);
+    EXPECT_NE(a.begin(), b.begin());
 }
