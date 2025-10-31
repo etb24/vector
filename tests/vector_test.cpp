@@ -61,6 +61,21 @@ struct AllocCounter {
     }
 };
 
+struct MoveOnly {
+    int value;
+
+    explicit MoveOnly(int v) : value(v) {}
+    MoveOnly(const MoveOnly&) = delete;
+    MoveOnly& operator=(const MoveOnly&) = delete;
+
+    MoveOnly(MoveOnly&& other) noexcept : value(other.value)
+    {
+        other.value = -1;
+    }
+
+    MoveOnly& operator=(MoveOnly&&) = delete;
+};
+
 class VectorTest : public ::testing::Test {
 protected:
     void SetUp() override
@@ -149,6 +164,34 @@ TEST_F(VectorTest, ReallocatePrefersMoveConstruction)
     EXPECT_GE(AllocCounter::move_ctor_count, 2u);
 }
 
+TEST_F(VectorTest, EmplaceBackConstructsInPlace)
+{
+    Vector<AllocCounter> vec;
+
+    AllocCounter::reset();
+    auto& ref = vec.emplace_back(42);
+
+    EXPECT_EQ(vec.size(), 1u);
+    EXPECT_EQ(vec[0].value, 42);
+    EXPECT_EQ(&ref, &vec.back());
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 0u);
+    EXPECT_EQ(AllocCounter::copy_assignment_count, 0u);
+}
+
+TEST_F(VectorTest, EmplaceBackSupportsMoveOnlyTypes)
+{
+    Vector<MoveOnly> vec;
+
+    vec.emplace_back(7);
+    EXPECT_EQ(vec.size(), 1u);
+    EXPECT_EQ(vec[0].value, 7);
+
+    auto& second = vec.emplace_back(9);
+    EXPECT_EQ(vec.size(), 2u);
+    EXPECT_EQ(second.value, 9);
+    EXPECT_EQ(vec[0].value, 7);
+}
+
 // Modifiers
 TEST_F(VectorTest, PushBackWithLValueStoresElementsAndUpdatesSize)
 {
@@ -215,6 +258,119 @@ TEST_F(VectorTest, PopBackDestroysLastElement)
     EXPECT_EQ(AllocCounter::dtor_count, 1u);
 }
 
+TEST_F(VectorTest, MoveAssignmentTransfersOwnership)
+{
+    Vector<AllocCounter> source;
+    source.emplace_back(3);
+    source.emplace_back(4);
+    auto* original_data = source.data();
+
+    Vector<AllocCounter> target;
+    target.emplace_back(1);
+    target.emplace_back(2);
+
+    AllocCounter::reset();
+    target = std::move(source);
+
+    EXPECT_EQ(target.size(), 2u);
+    EXPECT_EQ(target[0].value, 3);
+    EXPECT_EQ(target[1].value, 4);
+    EXPECT_EQ(target.data(), original_data);
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 0u);
+    EXPECT_EQ(AllocCounter::move_ctor_count, 0u);
+    EXPECT_EQ(AllocCounter::dtor_count, 2u); // old target elements destroyed
+
+    EXPECT_EQ(source.size(), 0u);
+    EXPECT_EQ(source.capacity(), 0u);
+    EXPECT_EQ(source.begin(), source.end());
+}
+
+TEST_F(VectorTest, CopyConstructorCreatesIndependentVector)
+{
+    Vector<AllocCounter> original;
+    original.push_back(AllocCounter(1));
+    original.push_back(AllocCounter(2));
+
+    AllocCounter::reset();
+    Vector<AllocCounter> copy(original);
+
+    EXPECT_EQ(copy.size(), 2u);
+    EXPECT_EQ(copy[0].value, 1);
+    EXPECT_EQ(copy[1].value, 2);
+    EXPECT_GE(copy.capacity(), copy.size());
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 2u);
+    EXPECT_EQ(AllocCounter::move_ctor_count, 0u);
+    EXPECT_NE(copy.data(), original.data());
+
+    original[0].value = 10;
+    EXPECT_EQ(copy[0].value, 1);
+}
+
+TEST_F(VectorTest, CopyAssignmentPerformsDeepCopy)
+{
+    Vector<AllocCounter> source;
+    source.push_back(AllocCounter(5));
+    source.push_back(AllocCounter(6));
+
+    Vector<AllocCounter> target;
+    target.push_back(AllocCounter(1));
+    target.push_back(AllocCounter(2));
+
+    AllocCounter::reset();
+    target = source;
+
+    EXPECT_EQ(target.size(), 2u);
+    EXPECT_EQ(target[0].value, 5);
+    EXPECT_EQ(target[1].value, 6);
+    EXPECT_GE(target.capacity(), target.size());
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 2u);
+    EXPECT_EQ(AllocCounter::dtor_count, 2u);
+    EXPECT_NE(target.data(), source.data());
+
+    source[0].value = 9;
+    EXPECT_EQ(target[0].value, 5);
+}
+
+TEST_F(VectorTest, CopyAssignmentHandlesSelfAssignment)
+{
+    Vector<int> vec;
+    vec.push_back(7);
+    vec.push_back(8);
+
+    vec = vec;
+
+    EXPECT_EQ(vec.size(), 2u);
+    EXPECT_EQ(vec[0], 7);
+    EXPECT_EQ(vec[1], 8);
+}
+
+TEST_F(VectorTest, StdSwapExchangesContents)
+{
+    Vector<int> a;
+    a.push_back(1);
+    a.push_back(2);
+    auto* a_data = a.data();
+
+    Vector<int> b;
+    b.push_back(10);
+    b.push_back(20);
+    b.push_back(30);
+    auto* b_data = b.data();
+
+    std::swap(a, b);
+
+    EXPECT_EQ(a.size(), 3u);
+    EXPECT_EQ(a[0], 10);
+    EXPECT_EQ(a[1], 20);
+    EXPECT_EQ(a[2], 30);
+    EXPECT_EQ(a.data(), b_data);
+
+    EXPECT_EQ(b.size(), 2u);
+    EXPECT_EQ(b[0], 1);
+    EXPECT_EQ(b[1], 2);
+    EXPECT_EQ(b.data(), a_data);
+}
+
 TEST_F(VectorTest, ClearDestroysAllElementsAndPreservesCapacity)
 {
     Vector<AllocCounter> vec;
@@ -264,6 +420,59 @@ TEST_F(VectorTest, IteratorTraversalMatchesSequence)
     EXPECT_EQ(index, 3u);
 }
 
+TEST_F(VectorTest, EmptyReflectsContainerState)
+{
+    Vector<int> vec;
+    EXPECT_TRUE(vec.empty());
+
+    vec.push_back(5);
+    EXPECT_FALSE(vec.empty());
+
+    vec.pop_back();
+    EXPECT_TRUE(vec.empty());
+}
+
+TEST_F(VectorTest, FrontAndBackProvideAccess)
+{
+    Vector<int> vec;
+    vec.push_back(11);
+    vec.push_back(22);
+
+    EXPECT_EQ(vec.front(), 11);
+    EXPECT_EQ(vec.back(), 22);
+
+    const Vector<int>& cvec = vec;
+    EXPECT_EQ(cvec.front(), 11);
+    EXPECT_EQ(cvec.back(), 22);
+}
+
+TEST_F(VectorTest, DataExposesContiguousStorage)
+{
+    Vector<int> vec;
+    vec.push_back(10);
+    vec.push_back(20);
+
+    int* raw = vec.data();
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(raw[0], 10);
+    EXPECT_EQ(raw[1], 20);
+}
+
+TEST_F(VectorTest, ConstIteratorsDereferenceValues)
+{
+    Vector<int> vec;
+    vec.push_back(1);
+    vec.push_back(2);
+
+    const Vector<int>& cvec = vec;
+    auto it = cvec.cbegin();
+    EXPECT_EQ(*it, 1);
+    ++it;
+    EXPECT_EQ(*it, 2);
+    ++it;
+    EXPECT_EQ(it, cvec.cend());
+}
+
 TEST_F(VectorTest, IteratorSupportsRandomAccessLikeOperations)
 {
     Vector<int> vec;
@@ -308,4 +517,25 @@ TEST_F(VectorTest, IteratorEqualityChecks)
     Vector<int> b;
     b.push_back(7);
     EXPECT_NE(a.begin(), b.begin());
+}
+
+TEST_F(VectorTest, IteratorArrowAccessProvidesMember)
+{
+    struct Point {
+        int x;
+        int y;
+    };
+
+    Vector<Point> vec;
+    vec.emplace_back(Point{1, 2});
+    vec.emplace_back(Point{3, 4});
+
+    auto it = vec.begin();
+    EXPECT_EQ(it->x, 1);
+    EXPECT_EQ(it->y, 2);
+
+    const Vector<Point>& cvec = vec;
+    auto cit = cvec.cbegin();
+    EXPECT_EQ(cit->x, 1);
+    EXPECT_EQ(cit->y, 2);
 }

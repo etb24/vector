@@ -1,6 +1,4 @@
 #pragma once
-#include <cstddef>
-#include <utility>
 
 
 template <typename T>
@@ -101,8 +99,31 @@ public:
     using const_iterator = VectorIterator<const T>;
 
     // default constructor
-    Vector()
-        : _capacity(0), _size(0), _data(nullptr){}
+    Vector() noexcept
+        : _capacity(0), _size(0), _data(nullptr) {}
+
+    // copy constructor
+    Vector(const Vector& other)
+        : _capacity(other._size), _size(0), _data(nullptr)
+    {
+        if (_capacity > 0) {
+            _data = static_cast<pointer_type>(::operator new(_capacity * sizeof(T)));
+            try {
+                for (; _size < other._size; ++_size) {
+                    new (&_data[_size]) T(other._data[_size]);
+                }
+            } catch (...) {
+                for (size_type i = 0; i < _size; ++i) {
+                    _data[i].~T();
+                }
+                ::operator delete(_data);
+                _data = nullptr;
+                _size = 0;
+                _capacity = 0;
+                throw;
+            }
+        }
+    }
 
     // move constructor
     Vector(Vector&& other) noexcept
@@ -112,6 +133,36 @@ public:
         other._data = nullptr;
         other._size = 0;
         other._capacity  = 0;
+    }
+
+    Vector& operator=(const Vector& other)
+    {
+        if (this != &other) {
+            Vector temp(other);
+            swap(temp);
+        }
+        return *this;
+    }
+
+    Vector& operator=(Vector&& other) noexcept
+    {
+        if (this != &other) {
+            clear();
+            ::operator delete(_data);
+            _data = other._data;
+            _size = other._size;
+            _capacity = other._capacity;
+            other._data = nullptr;
+            other._size = other._capacity = 0;
+        }
+        return *this;
+    }
+
+    void swap(Vector& other) noexcept
+    {
+        std::swap(_data, other._data);
+        std::swap(_size, other._size);
+        std::swap(_capacity, other._capacity);
     }
 
     // deconstructor
@@ -134,6 +185,21 @@ public:
         return _capacity;
     }
 
+    [[nodiscard]] bool empty() const
+    {
+        return _size == 0;
+    }
+
+    pointer_type data()
+    {
+        return _data;
+    }
+
+    const_pointer_type data() const noexcept
+    {
+        return _data;
+    }
+
     reference operator[](size_type index)
     {
         if (index >= _size)
@@ -150,6 +216,26 @@ public:
             //assert
         }
         return _data[index];
+    }
+
+    reference front()
+    {
+        return _data[0];
+    }
+
+    const_reference front() const
+    {
+        return _data[0];
+    }
+
+    reference back()
+    {
+        return _data[_size - 1];
+    }
+
+    const_reference back() const
+    {
+        return _data[_size - 1];
     }
 
     void clear() {
@@ -172,6 +258,15 @@ public:
         ensure_capacity();
         new (&_data[_size]) T(std::move(value)); // move-construct
         ++_size;
+    }
+
+    template<typename... Args>
+    reference emplace_back(Args&& ... args)
+    {
+        ensure_capacity();
+        new (&_data[_size]) T(std::forward<Args>(args)...);
+        _size++;
+        return _data[_size - 1]; // size was incremented previously
     }
 
     void pop_back()
