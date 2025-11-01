@@ -205,6 +205,37 @@ TEST_F(VectorTest, CapacityExpandsAsElementsAreAdded)
     }
 }
 
+TEST_F(VectorTest, ReserveIncreasesCapacityWithoutChangingSize)
+{
+    Vector<int> vec;
+    vec.push_back(1);
+    vec.push_back(2);
+
+    const auto original_capacity = vec.capacity();
+    auto* original_data = vec.data();
+
+    vec.reserve(original_capacity + 5);
+
+    EXPECT_EQ(vec.size(), 2u);
+    EXPECT_NE(vec.data(), original_data);
+    EXPECT_EQ(vec.capacity(), original_capacity + 5);
+    EXPECT_EQ(vec[0], 1);
+    EXPECT_EQ(vec[1], 2);
+}
+
+TEST_F(VectorTest, ReserveDoesNotShrinkExistingCapacity)
+{
+    Vector<int> vec;
+    vec.reserve(8);
+    auto* reserved_data = vec.data();
+
+    vec.reserve(4);
+
+    EXPECT_EQ(vec.capacity(), 8u);
+    EXPECT_EQ(vec.data(), reserved_data);
+    EXPECT_EQ(vec.size(), 0u);
+}
+
 TEST_F(VectorTest, ReallocatePrefersMoveConstruction)
 {
     Vector<AllocCounter> vec;
@@ -336,6 +367,44 @@ TEST_F(VectorTest, PopBackDestroysLastElement)
     EXPECT_EQ(vec.size(), 1u);
     EXPECT_EQ(vec[0].value, 1);
     EXPECT_EQ(AllocCounter::dtor_count, 1u);
+}
+
+TEST_F(VectorTest, ResizeShrinksAndDestroysTrailingElements)
+{
+    Vector<AllocCounter> vec;
+    vec.emplace_back(1);
+    vec.emplace_back(2);
+    vec.emplace_back(3);
+    const auto original_capacity = vec.capacity();
+
+    AllocCounter::reset();
+    vec.resize(1);
+
+    EXPECT_EQ(vec.size(), 1u);
+    EXPECT_EQ(vec[0].value, 1);
+    EXPECT_EQ(vec.capacity(), original_capacity);
+    EXPECT_EQ(AllocCounter::dtor_count, 2u);
+}
+
+TEST_F(VectorTest, ResizeExpandsWithValueInitializedElements)
+{
+    Vector<AllocCounter> vec;
+    vec.emplace_back(5);
+    const auto original_capacity = vec.capacity();
+
+    AllocCounter::reset();
+    vec.resize(3);
+
+    EXPECT_EQ(vec.size(), 3u);
+    EXPECT_EQ(vec[0].value, 5);
+    EXPECT_EQ(vec[1].value, 0);
+    EXPECT_EQ(vec[2].value, 0);
+    EXPECT_EQ(AllocCounter::default_ctor_count, 2u);
+    EXPECT_EQ(AllocCounter::copy_ctor_count, 0u);
+    EXPECT_GE(AllocCounter::move_ctor_count, 1u);
+    EXPECT_EQ(AllocCounter::dtor_count, 1u);
+    EXPECT_GE(vec.capacity(), 3u);
+    EXPECT_GE(vec.capacity(), original_capacity);
 }
 
 TEST_F(VectorTest, MoveAssignmentTransfersOwnership)

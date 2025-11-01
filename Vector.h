@@ -4,6 +4,7 @@
 #include <iterator>
 #include <stdexcept>
 #include <utility>
+#include <memory>
 
 template <typename T>
 class VectorIterator
@@ -53,7 +54,6 @@ public:
     {
         return _pointer[index];
     }
-
 
     pointer_type operator->()
     {
@@ -274,6 +274,48 @@ public:
             _data[_size - 1].~T();
             --_size;
         }
+    }
+
+    void reserve(size_type new_cap)
+    {
+        if (new_cap < _size) return;
+        if (new_cap > _capacity) reallocate(new_cap);
+    }
+
+    void resize(size_type new_size)
+    {
+        size_type curr_size = size();
+
+        if (curr_size > new_size)
+        {
+            // destroy trailing elements
+            for (size_type i = new_size; i < _size; ++i) {
+                _data[i].~T();
+            }
+            _size = new_size;
+            return;
+        }
+
+        if (curr_size < new_size)
+        {
+            reserve(new_size);
+            try
+            {
+                for (size_type i = curr_size; i < new_size; ++i)
+                {
+                    new (&_data[i]) T(); // init
+                }
+            } catch (...)
+            {
+                // destroy constructed elements if throws
+                for (size_type j = curr_size; j < new_size; ++j)
+                {
+                    _data[j].~T(); // clean up if throw
+                }
+                throw;
+            }
+        }
+        _size = new_size;
     }
 
     // VectorIterators
