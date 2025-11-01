@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstddef>
+#include <iterator>
+#include <stdexcept>
+#include <utility>
 
 template <typename T>
 class VectorIterator
@@ -202,19 +206,13 @@ public:
 
     reference operator[](size_type index)
     {
-        if (index >= _size)
-        {
-            //assert
-        }
+        if (index >= _size) throw std::out_of_range("index out of range");
         return _data[index];
     }
 
     const_reference operator[](size_type index) const
     {
-        if (index >= _size)
-        {
-            //assert
-        }
+        if (index >= _size) throw std::out_of_range("index out of range");
         return _data[index];
     }
 
@@ -316,16 +314,28 @@ private:
         // allocate new mem
         auto new_data = static_cast<pointer_type>(::operator new(new_capacity * sizeof(T)));
 
-        // move to new mem
-        for (size_type i = 0; i < _size; i++)
-        {
-            new (&new_data[i]) T(std::move(_data[i]));
+        // try-catch to roll back potential throws for memory leakage
+        size_type i = 0;
+        try {
+            // move to new mem
+            for (; i < _size; i++)
+            {
+                new (&new_data[i]) T(std::move_if_noexcept(_data[i]));
+            }
+        } catch (...) {
+            // destroy constructed elements and mem if throw
+            for (size_type j = 0; j < i; ++j)
+            {
+                new_data[j].~T();
+            }
+            ::operator delete(new_data);
+            throw;
         }
 
         // destroy old elements and point to new
-        for (size_type i = 0; i < _size; i++)
+        for (size_type k = 0; k < _size; k++)
         {
-            _data[i].~T();
+            _data[k].~T();
         }
 
         ::operator delete(_data);

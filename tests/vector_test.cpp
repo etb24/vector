@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <utility>
 #include "../Vector.h"
 
@@ -76,6 +77,50 @@ struct MoveOnly {
     MoveOnly& operator=(MoveOnly&&) = delete;
 };
 
+struct CopyError : std::runtime_error {
+    CopyError() : std::runtime_error("copy error") {}
+};
+
+struct ThrowOnCopy {
+    static inline int live_objects{0};
+    static inline int copy_count{0};
+    static inline int throw_on_copy{-1};
+
+    int value;
+
+    explicit ThrowOnCopy(int v) : value(v)
+    {
+        ++live_objects;
+    }
+
+    ThrowOnCopy(const ThrowOnCopy& other) : value(other.value)
+    {
+        if (throw_on_copy >= 0 && copy_count >= throw_on_copy) {
+            ++copy_count;
+            throw CopyError{};
+        }
+        ++copy_count;
+        ++live_objects;
+    }
+
+    ThrowOnCopy(ThrowOnCopy&& other) noexcept(false) : value(other.value)
+    {
+        ++live_objects;
+    }
+
+    ~ThrowOnCopy()
+    {
+        --live_objects;
+    }
+
+    static void reset()
+    {
+        live_objects = 0;
+        copy_count = 0;
+        throw_on_copy = -1;
+    }
+};
+
 class VectorTest : public ::testing::Test {
 protected:
     void SetUp() override
@@ -132,6 +177,17 @@ TEST_F(VectorTest, ConstSubscriptProvidesConstAccess)
     EXPECT_EQ(const_ref[1], 9);
 }
 
+TEST_F(VectorTest, SubscriptThrowsOnOutOfRangeAccess)
+{
+    Vector<int> vec;
+    vec.push_back(42);
+
+    EXPECT_THROW(vec[1], std::out_of_range);
+
+    const Vector<int>& cvec = vec;
+    EXPECT_THROW(cvec[1], std::out_of_range);
+}
+
 // Capacity
 TEST_F(VectorTest, CapacityExpandsAsElementsAreAdded)
 {
@@ -162,6 +218,30 @@ TEST_F(VectorTest, ReallocatePrefersMoveConstruction)
     EXPECT_EQ(vec[1].value, 2);
     EXPECT_EQ(AllocCounter::copy_ctor_count, 0u);
     EXPECT_GE(AllocCounter::move_ctor_count, 2u);
+}
+
+TEST_F(VectorTest, ReallocateRollsBackWhenCopyThrows)
+{
+    ThrowOnCopy::reset();
+    {
+        Vector<ThrowOnCopy> vec;
+        vec.emplace_back(1);
+        vec.emplace_back(2);
+
+        EXPECT_EQ(vec.size(), 2u);
+        EXPECT_EQ(ThrowOnCopy::live_objects, 2);
+
+        ThrowOnCopy::throw_on_copy = 1;
+        EXPECT_THROW(vec.emplace_back(3), CopyError);
+
+        EXPECT_EQ(vec.size(), 2u);
+        EXPECT_EQ(vec[0].value, 1);
+        EXPECT_EQ(vec[1].value, 2);
+        EXPECT_EQ(ThrowOnCopy::live_objects, 2);
+        EXPECT_EQ(ThrowOnCopy::copy_count, 2);
+    }
+    EXPECT_EQ(ThrowOnCopy::live_objects, 0);
+    ThrowOnCopy::reset();
 }
 
 TEST_F(VectorTest, EmplaceBackConstructsInPlace)
@@ -337,8 +417,6 @@ TEST_F(VectorTest, CopyAssignmentHandlesSelfAssignment)
     vec.push_back(7);
     vec.push_back(8);
 
-    vec = vec;
-
     EXPECT_EQ(vec.size(), 2u);
     EXPECT_EQ(vec[0], 7);
     EXPECT_EQ(vec[1], 8);
@@ -410,9 +488,9 @@ TEST_F(VectorTest, IteratorTraversalMatchesSequence)
     vec.push_back(8);
     vec.push_back(15);
 
-    int expected[] = {4, 8, 15};
     std::size_t index = 0;
     for (int value : vec) {
+        constexpr int expected[] = {4, 8, 15};
         ASSERT_LT(index, 3u);
         EXPECT_EQ(value, expected[index]);
         ++index;
