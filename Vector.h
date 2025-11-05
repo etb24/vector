@@ -18,18 +18,22 @@ public:
     using reference_type = T&;
     using const_reference = const T&;
 
+    // Creates an iterator that does not point to any element.
     VectorIterator()
         : _pointer(nullptr){}
 
+    // Creates an iterator bound to the given raw pointer.
     explicit VectorIterator(pointer_type pointer)
         : _pointer(pointer) {}
 
+    // Moves the iterator forward to the next element (prefix).
     VectorIterator& operator++()
     {
         ++_pointer;
         return *this;
     }
 
+    // Moves the iterator forward and returns the previous position (postfix).
     VectorIterator operator++(int)
     {
         VectorIterator iterator(*this);
@@ -37,12 +41,14 @@ public:
         return iterator;
     }
 
+    // Moves the iterator backward to the previous element (prefix).
     VectorIterator& operator--()
     {
         --_pointer;
         return *this;
     }
 
+    // Moves the iterator backward and returns the previous position (postfix).
     VectorIterator operator--(int)
     {
         VectorIterator iterator(*this);
@@ -50,36 +56,43 @@ public:
         return iterator;
     }
 
+    // Provides indexed access relative to the current iterator.
     reference_type operator[](size_t index) const
     {
         return _pointer[index];
     }
 
+    // Exposes the underlying pointer to access members.
     pointer_type operator->()
     {
         return _pointer;
     }
 
+    // Exposes the underlying pointer for const access to members.
     const_pointer_type operator->() const
     {
         return _pointer;
     }
 
+    // Dereferences the iterator to obtain the referenced element.
     reference_type operator*()
     {
         return *_pointer;
     }
 
+    // Dereferences the iterator to obtain the referenced element (const).
     const_reference operator*() const
     {
         return *_pointer;
     }
 
+    // Checks whether two iterators refer to the same element.
     bool operator==(const VectorIterator& other) const
     {
         return _pointer == other._pointer;
     }
 
+    // Checks whether two iterators refer to different elements.
     bool operator!=(const VectorIterator& other) const
     {
         return _pointer != other._pointer;
@@ -102,11 +115,11 @@ public:
     using iterator = VectorIterator<T>;
     using const_iterator = VectorIterator<const T>;
 
-    // default constructor
+    // Constructs an empty vector with zero capacity.
     Vector() noexcept
         : _capacity(0), _size(0), _data(nullptr) {}
 
-    // copy constructor
+    // Copies elements from another vector, allocating exactly enough storage.
     Vector(const Vector& other)
         : _capacity(other._size), _size(0), _data(nullptr)
     {
@@ -129,7 +142,7 @@ public:
         }
     }
 
-    // move constructor
+    // Takes ownership of another vector's storage without copying elements.
     Vector(Vector&& other) noexcept
         : _capacity(other._capacity), _size(other._size), _data(other._data)
     {
@@ -139,6 +152,7 @@ public:
         other._capacity  = 0;
     }
 
+    // Assigns from another vector by making a deep copy.
     Vector& operator=(const Vector& other)
     {
         if (this != &other) {
@@ -148,6 +162,7 @@ public:
         return *this;
     }
 
+    // Assigns from another vector by transferring ownership of its storage.
     Vector& operator=(Vector&& other) noexcept
     {
         if (this != &other) {
@@ -162,6 +177,7 @@ public:
         return *this;
     }
 
+    // Exchanges all with another vector.
     void swap(Vector& other) noexcept
     {
         std::swap(_data, other._data);
@@ -169,7 +185,7 @@ public:
         std::swap(_capacity, other._capacity);
     }
 
-    // deconstructor
+    // Releases all elements and frees any owned storage.
     ~Vector()
     {
         for (size_type i = 0; i < _size; i++)
@@ -179,63 +195,75 @@ public:
         ::operator delete(_data);
     }
 
+    // Returns how many elements are currently stored.
     [[nodiscard]] size_type size() const
     {
         return _size;
     }
 
+    // Returns how many elements can be stored without further allocation.
     [[nodiscard]] size_type capacity() const
     {
         return _capacity;
     }
 
+    // Indicates whether the vector contains no elements.
     [[nodiscard]] bool empty() const
     {
         return _size == 0;
     }
 
+    // Provides direct access to the underlying mutable buffer.
     pointer_type data()
     {
         return _data;
     }
 
+    // Provides direct access to the underlying immutable buffer.
     const_pointer_type data() const noexcept
     {
         return _data;
     }
 
+    // Returns a reference to the element at the supplied index.
     reference operator[](size_type index)
     {
         if (index >= _size) throw std::out_of_range("index out of range");
         return _data[index];
     }
 
+    // Returns a const reference to the element at the supplied index.
     const_reference operator[](size_type index) const
     {
         if (index >= _size) throw std::out_of_range("index out of range");
         return _data[index];
     }
 
+    // Returns a reference to the first element.
     reference front()
     {
         return _data[0];
     }
 
+    // Returns a const reference to the first element.
     const_reference front() const
     {
         return _data[0];
     }
 
+    // Returns a reference to the last element.
     reference back()
     {
         return _data[_size - 1];
     }
 
+    // Returns a const reference to the last element.
     const_reference back() const
     {
         return _data[_size - 1];
     }
 
+    // Destroys all elements while retaining allocated storage.
     void clear() {
         for (size_type i = 0; i < _size; ++i) {
             _data[i].~T();
@@ -243,7 +271,7 @@ public:
         _size = 0;
     }
 
-    // eventually move modifiers
+    // Appends a copy of the provided value to the end of the vector.
     void push_back(const T& value)
     {
         ensure_capacity();
@@ -251,6 +279,7 @@ public:
         ++_size;
     }
 
+    // Appends the provided value by moving it into the vector.
     void push_back(T&& value)
     {
         ensure_capacity();
@@ -258,6 +287,7 @@ public:
         ++_size;
     }
 
+    // Constructs a new element in place at the end using the supplied arguments.
     template<typename... Args>
     reference emplace_back(Args&& ... args)
     {
@@ -267,6 +297,7 @@ public:
         return _data[_size - 1]; // size was incremented previously
     }
 
+    // Removes the last element if the vector is not empty.
     void pop_back()
     {
         if (_size > 0)
@@ -276,16 +307,19 @@ public:
         }
     }
 
+    // Reserves memory for new_cap capacity, preserving existing elements.
     void reserve(size_type new_cap)
     {
         if (new_cap < _size) return;
         if (new_cap > _capacity) reallocate(new_cap);
     }
 
+    // Grows or shrinks the vector to the requested size.
     void resize(size_type new_size)
     {
         size_type curr_size = size();
 
+        // shrink cap
         if (curr_size > new_size)
         {
             // destroy trailing elements
@@ -296,6 +330,7 @@ public:
             return;
         }
 
+        // reserves new mem
         if (curr_size < new_size)
         {
             reserve(new_size);
@@ -319,38 +354,45 @@ public:
     }
 
     // VectorIterators
+    // Returns an iterator to the first element.
     iterator begin() noexcept
     {
         return iterator(_data);
     }
 
+    // Returns an iterator one past the last element.
     iterator end() noexcept
     {
         return iterator(_data + _size);
     }
 
+    // Returns a const iterator to the first element.
     const_iterator begin() const noexcept
     {
         return const_iterator(_data);
     }
 
+    // Returns a const iterator one past the last element.
     const_iterator end() const noexcept
     {
         return const_iterator(_data + _size);
     }
 
+    // Returns a const iterator to the first element (C++ standard naming).
     const_iterator cbegin() const noexcept
     {
         return const_iterator(_data);
     }
 
+    // Returns a const iterator one past the last element (C++ standard naming).
     const_iterator cend() const noexcept
     {
         return const_iterator(_data + _size);
     }
 
 private:
-    // eventually move to an Allocator
+    // Eventually move to an Allocator (?)
+    // Allocates new storage and moves existing elements into it.
     void reallocate(const size_t new_capacity)
     {
         // allocate new mem
@@ -385,6 +427,7 @@ private:
         _capacity = new_capacity;
     }
 
+    // Expands capacity when additional space is required.
     void ensure_capacity()
     {
         if (_size == _capacity)
